@@ -463,6 +463,58 @@
   - ( "firewalld" in ansible_facts.packages and "nftables" in ansible_facts.packages and "kernel-core" in ansible_facts.packages
     )
 
+- name: Disable KDump Kernel Crash Analyzer (kdump) - Disable service kdump
+  block:
+  - name: Disable KDump Kernel Crash Analyzer (kdump) - Collect systemd Services Present in the System
+    ansible.builtin.command: systemctl -q list-unit-files --type service
+    register: service_exists
+    changed_when: false
+    failed_when: service_exists.rc not in [0, 1]
+    check_mode: false
+  - name: Disable KDump Kernel Crash Analyzer (kdump) - Ensure kdump.service is Masked
+    ansible.builtin.systemd:
+      name: kdump.service
+      state: stopped
+      enabled: false
+      masked: true
+    when: service_exists.stdout_lines is search("kdump.service", multiline=True)
+  - name: Unit Socket Exists - kdump.socket
+    ansible.builtin.command: systemctl -q list-unit-files kdump.socket
+    register: socket_file_exists
+    changed_when: false
+    failed_when: socket_file_exists.rc not in [0, 1]
+    check_mode: false
+  - name: Disable KDump Kernel Crash Analyzer (kdump) - Disable Socket kdump
+    ansible.builtin.systemd:
+      name: kdump.socket
+      enabled: false
+      state: stopped
+      masked: true
+    when: socket_file_exists.stdout_lines is search("kdump.socket", multiline=True)
+  tags:
+  - CCE-84232-8
+  - DISA-STIG-RHEL-09-213115
+  - NIST-800-53-CM-6(a)
+  - NIST-800-53-CM-7(a)
+  - NIST-800-53-CM-7(b)
+  - disable_strategy
+  - low_complexity
+  - low_disruption
+  - medium_severity
+  - no_reboot_needed
+  - service_kdump_disabled
+  - special_service_block
+  when:
+  - DISA_STIG_RHEL_09_213115 | bool
+  - disable_strategy | bool
+  - low_complexity | bool
+  - low_disruption | bool
+  - medium_severity | bool
+  - no_reboot_needed | bool
+  - service_kdump_disabled | bool
+  - special_service_block | bool
+  - '"kernel-core" in ansible_facts.packages'
+
 - name: Enable the USBGuard Service - Enable service usbguard
   block:
   - name: Enable the USBGuard Service - Enable Service usbguard
@@ -1769,8 +1821,11 @@
 - name: Modify the System Login Banner - Ensure Correct Banner
   ansible.builtin.copy:
     dest: /etc/issue
-    content: '{{ login_banner_text | regex_replace("^\^(.*)\$$", "\1") | regex_replace("^\((.*\.)\|.*\)$", "\1") | regex_replace("\[\\s\\n\]\+","
-      ") | regex_replace("\(\?:\[\\n\]\+\|\(\?:\\\\n\)\+\)", "\n") | regex_replace("\\", "") | wordwrap() }}'
+    content: '{{ login_banner_contents | replace(''\n'', ''
+
+      '') }}
+
+      '
   when:
   - DISA_STIG_RHEL_09_211020 | bool
   - banner_etc_issue | bool
@@ -1796,9 +1851,11 @@
 - name: Modify the System Login Banner for Remote Connections - ensure correct banner
   ansible.builtin.copy:
     dest: /etc/issue.net
-    content: '{{ remote_login_banner_text | regex_replace("^\^(.*)\$$", "\1") | regex_replace("^\((.*\.)\|.*\)$", "\1") |
-      regex_replace("\[\\s\\n\]\+"," ") | regex_replace("\(\?:\[\\n\]\+\|\(\?:\\\\n\)\+\)", "\n") | regex_replace("\\", "")
-      | wordwrap() }}'
+    content: '{{ remote_login_banner_contents | replace(''\n'', ''
+
+      '') }}
+
+      '
   when:
   - banner_etc_issue_net | bool
   - low_complexity | bool
@@ -1819,8 +1876,11 @@
 - name: Modify the System Message of the Day Banner - ensure correct banner
   ansible.builtin.copy:
     dest: /etc/motd
-    content: '{{ motd_banner_text | regex_replace("^\^(.*)\$$", "\1") | regex_replace("^\((.*\.)\|.*\)$", "\1") | regex_replace("\[\\s\\n\]\+","
-      ") | regex_replace("\(\?:\[\\n\]\+\|\(\?:\\\\n\)\+\)", "\n") | regex_replace("\\", "") | wordwrap() }}'
+    content: '{{ motd_banner_contents | replace(''\n'', ''
+
+      '') }}
+
+      '
   when:
   - banner_etc_motd | bool
   - low_complexity | bool
@@ -2001,9 +2061,7 @@
     dest: /etc/dconf/db/distro.d/00-security-settings
     section: org/gnome/login-screen
     option: banner-message-text
-    value: '''{{ login_banner_text | regex_replace("^\^(.*)\$$", "\1") | regex_replace("^\((.*\.)\|.*\)$", "\1") | regex_replace("\[\\s\\n\]\+","
-      ") | regex_replace("\(\?:\[\\n\]\+\|\(\?:\\\\n\)\+\)", "(n)*") | regex_replace("\\", "") | regex_replace("\(n\)\*",
-      "\\n") }}'''
+    value: '''{{ dconf_login_banner_contents }}'''
     create: true
     no_extra_spaces: true
   register: result_ini
@@ -6133,30 +6191,6 @@
   - no_shelllogin_for_systemaccounts
   - restrict_strategy
 
-- name: Restrict usage of su command only to members of wheel group
-  ansible.builtin.replace:
-    path: /etc/pam.d/su
-    regexp: ^[\s]*#[\s]*auth[\s]+required[\s]+pam_wheel\.so[\s]+use_uid$
-    replace: auth             required        pam_wheel.so use_uid
-  when:
-  - DISA_STIG_RHEL_09_432035 | bool
-  - low_complexity | bool
-  - low_disruption | bool
-  - medium_severity | bool
-  - no_reboot_needed | bool
-  - restrict_strategy | bool
-  - use_pam_wheel_for_su | bool
-  - '"pam" in ansible_facts.packages'
-  tags:
-  - CCE-90085-2
-  - DISA-STIG-RHEL-09-432035
-  - low_complexity
-  - low_disruption
-  - medium_severity
-  - no_reboot_needed
-  - restrict_strategy
-  - use_pam_wheel_for_su
-
 - name: Set the file_groupowner_grub2_cfg_newgroup variable if represented by gid
   ansible.builtin.set_fact:
     file_groupowner_grub2_cfg_newgroup: '0'
@@ -6661,7 +6695,7 @@
   - medium_severity | bool
   - no_reboot_needed | bool
   - '"kernel-core" in ansible_facts.packages'
-  - ansible_facts.services['firewalld.service'].state == 'running'
+  - ('firewalld.service' in ansible_facts.services and ansible_facts.services['firewalld.service'].state == 'running')
   tags:
   - CCE-86137-7
   - PCI-DSSv4-1.4
@@ -6676,7 +6710,8 @@
 - name: Configure Firewalld to Restrict Loopback Traffic - Informative Message Based on Service State
   ansible.builtin.assert:
     that:
-    - ansible_check_mode or ansible_facts.services['firewalld.service'].state == 'running'
+    - (ansible_check_mode or ('firewalld.service' in ansible_facts.services and ansible_facts.services['firewalld.service'].state
+      == 'running'))
     fail_msg:
     - firewalld service is not active. Remediation aborted!
     - This remediation could not be applied because it depends on firewalld service running.
@@ -6724,7 +6759,7 @@
   - medium_severity | bool
   - no_reboot_needed | bool
   - '"kernel-core" in ansible_facts.packages'
-  - ansible_facts.services['firewalld.service'].state == 'running'
+  - ('firewalld.service' in ansible_facts.services and ansible_facts.services['firewalld.service'].state == 'running')
   tags:
   - CCE-86116-1
   - PCI-DSSv4-1.4
@@ -6739,7 +6774,8 @@
 - name: Configure Firewalld to Trust Loopback Traffic - Informative Message Based on Service State
   ansible.builtin.assert:
     that:
-    - ansible_check_mode or ansible_facts.services['firewalld.service'].state == 'running'
+    - (ansible_check_mode or ('firewalld.service' in ansible_facts.services and ansible_facts.services['firewalld.service'].state
+      == 'running'))
     fail_msg:
     - firewalld service is not active. Remediation aborted!
     - This remediation could not be applied because it depends on firewalld service running.
@@ -11318,63 +11354,6 @@
   - medium_severity
   - reboot_required
 
-- name: 'Add nosuid Option to /boot/efi: Check filesystem type of /boot/efi'
-  ansible.builtin.command: findmnt --kernel --raw --evaluate --output=FSTYPE '/boot/efi'
-  register: fs_type_check
-  failed_when: fs_type_check.rc > 1
-  changed_when: false
-  check_mode: false
-  when:
-  - DISA_STIG_RHEL_09_231105 | bool
-  - configure_strategy | bool
-  - high_disruption | bool
-  - low_complexity | bool
-  - medium_severity | bool
-  - mount_option_boot_efi_nosuid | bool
-  - no_reboot_needed | bool
-  - ( not ( "kernel-core" in ansible_facts.packages and "rpm-ostree" in ansible_facts.packages and "bootc" in ansible_facts.packages
-    and not "openshift-kubelet" in ansible_facts.packages and "ostree" in ansible_proc_cmdline ) and not ( ansible_virtualization_type
-    in ["docker", "lxc", "openvz", "podman", "container"] ) )
-  - '"/boot/efi" in ansible_mounts | map(attribute="mount") | list'
-  tags:
-  - CCE-86040-3
-  - DISA-STIG-RHEL-09-231105
-  - NIST-800-53-CM-6(b)
-  - NIST-800-53-CM-6.1(iv)
-  - configure_strategy
-  - high_disruption
-  - low_complexity
-  - medium_severity
-  - mount_option_boot_efi_nosuid
-  - no_reboot_needed
-
-- name: 'Add nosuid Option to /boot/efi: Set fact for excluded filesystem'
-  set_fact:
-    is_excluded_fstype: '{{ fs_type_check.rc == 0 and ''vfat'' in fs_type_check.stdout_lines }}'
-  when:
-  - DISA_STIG_RHEL_09_231105 | bool
-  - configure_strategy | bool
-  - high_disruption | bool
-  - low_complexity | bool
-  - medium_severity | bool
-  - mount_option_boot_efi_nosuid | bool
-  - no_reboot_needed | bool
-  - ( not ( "kernel-core" in ansible_facts.packages and "rpm-ostree" in ansible_facts.packages and "bootc" in ansible_facts.packages
-    and not "openshift-kubelet" in ansible_facts.packages and "ostree" in ansible_proc_cmdline ) and not ( ansible_virtualization_type
-    in ["docker", "lxc", "openvz", "podman", "container"] ) )
-  - '"/boot/efi" in ansible_mounts | map(attribute="mount") | list'
-  tags:
-  - CCE-86040-3
-  - DISA-STIG-RHEL-09-231105
-  - NIST-800-53-CM-6(b)
-  - NIST-800-53-CM-6.1(iv)
-  - configure_strategy
-  - high_disruption
-  - low_complexity
-  - medium_severity
-  - mount_option_boot_efi_nosuid
-  - no_reboot_needed
-
 - name: 'Add nosuid Option to /boot/efi: Check information associated to mountpoint'
   ansible.builtin.command: findmnt --fstab '/boot/efi'
   register: device_name
@@ -11393,7 +11372,6 @@
     and not "openshift-kubelet" in ansible_facts.packages and "ostree" in ansible_proc_cmdline ) and not ( ansible_virtualization_type
     in ["docker", "lxc", "openvz", "podman", "container"] ) )
   - '"/boot/efi" in ansible_mounts | map(attribute="mount") | list'
-  - not is_excluded_fstype | default(false)
   tags:
   - CCE-86040-3
   - DISA-STIG-RHEL-09-231105
@@ -11426,7 +11404,6 @@
   - '"/boot/efi" in ansible_mounts | map(attribute="mount") | list'
   - device_name.stdout is defined and device_name.stdout_lines is defined
   - (device_name.stdout | length > 0)
-  - not is_excluded_fstype | default(false)
   tags:
   - CCE-86040-3
   - DISA-STIG-RHEL-09-231105
@@ -11466,7 +11443,6 @@
   - ("--fstab" | length == 0)
   - device_name.stdout is defined and device_name.stdout_lines is defined
   - (device_name.stdout | length == 0)
-  - not is_excluded_fstype | default(false)
   tags:
   - CCE-86040-3
   - DISA-STIG-RHEL-09-231105
@@ -11496,7 +11472,6 @@
     in ["docker", "lxc", "openvz", "podman", "container"] ) )
   - '"/boot/efi" in ansible_mounts | map(attribute="mount") | list'
   - mount_info is defined and "nosuid" not in (mount_info.options | default(''))
-  - not is_excluded_fstype | default(false)
   tags:
   - CCE-86040-3
   - DISA-STIG-RHEL-09-231105
@@ -11535,7 +11510,6 @@
   - '"/boot/efi" in ansible_mounts | map(attribute="mount") | list'
   - mount_info is defined
   - (device_name.stdout is defined and (device_name.stdout | length > 0)) or ("--fstab" | length == 0)
-  - not is_excluded_fstype | default(false)
   tags:
   - CCE-86040-3
   - DISA-STIG-RHEL-09-231105
@@ -12968,13 +12942,14 @@
   - medium_severity
   - no_reboot_needed
 
-- name: Set SSH Client Alive Count Max - Check if the parameter ClientAliveCountMax is configured
-  ansible.builtin.find:
-    paths:
-    - /etc/ssh/sshd_config
-    - /etc/ssh/sshd_config.d
-    contains: (?i)^\s*{{ "ClientAliveCountMax"| regex_escape }}\s+
-  register: _sshd_config_has_parameter
+- name: Set SSH Client Alive Count Max - Check if the parameter ClientAliveCountMax is configured in /etc/ssh/sshd_config
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: (?i)^\s*{{ "ClientAliveCountMax"| regex_escape }}\s+
+    state: absent
+  check_mode: true
+  changed_when: false
+  register: _config_file_has_parameter
   when:
   - DISA_STIG_RHEL_09_255095 | bool
   - low_complexity | bool
@@ -13004,13 +12979,84 @@
   - restrict_strategy
   - sshd_set_keepalive
 
-- name: Set SSH Client Alive Count Max - Check if the parameter ClientAliveCountMax is configured correctly
+- name: Set SSH Client Alive Count Max - Check if the parameter ClientAliveCountMax is configured in /etc/ssh/sshd_config.d
   ansible.builtin.find:
     paths:
-    - /etc/ssh/sshd_config
+    - /etc/ssh/sshd_config.d
+    contains: (?i)^\s*{{ "ClientAliveCountMax"| regex_escape }}\s+
+  register: _config_dir_has_parameter
+  when:
+  - DISA_STIG_RHEL_09_255095 | bool
+  - low_complexity | bool
+  - low_disruption | bool
+  - medium_severity | bool
+  - no_reboot_needed | bool
+  - restrict_strategy | bool
+  - sshd_set_keepalive | bool
+  - '"kernel-core" in ansible_facts.packages'
+  tags:
+  - CCE-90805-3
+  - CJIS-5.5.6
+  - DISA-STIG-RHEL-09-255095
+  - NIST-800-171-3.1.11
+  - NIST-800-53-AC-12
+  - NIST-800-53-AC-17(a)
+  - NIST-800-53-AC-2(5)
+  - NIST-800-53-CM-6(a)
+  - NIST-800-53-SC-10
+  - PCI-DSS-Req-8.1.8
+  - PCI-DSSv4-8.2
+  - PCI-DSSv4-8.2.8
+  - low_complexity
+  - low_disruption
+  - medium_severity
+  - no_reboot_needed
+  - restrict_strategy
+  - sshd_set_keepalive
+
+- name: Set SSH Client Alive Count Max - Check if the parameter ClientAliveCountMax is configured correctly in /etc/ssh/sshd_config
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: (?i)^\s*{{ "ClientAliveCountMax"| regex_escape }}\s+{{ var_sshd_set_keepalive }}$
+    state: absent
+  check_mode: true
+  changed_when: false
+  register: _config_file_correctly
+  when:
+  - DISA_STIG_RHEL_09_255095 | bool
+  - low_complexity | bool
+  - low_disruption | bool
+  - medium_severity | bool
+  - no_reboot_needed | bool
+  - restrict_strategy | bool
+  - sshd_set_keepalive | bool
+  - '"kernel-core" in ansible_facts.packages'
+  tags:
+  - CCE-90805-3
+  - CJIS-5.5.6
+  - DISA-STIG-RHEL-09-255095
+  - NIST-800-171-3.1.11
+  - NIST-800-53-AC-12
+  - NIST-800-53-AC-17(a)
+  - NIST-800-53-AC-2(5)
+  - NIST-800-53-CM-6(a)
+  - NIST-800-53-SC-10
+  - PCI-DSS-Req-8.1.8
+  - PCI-DSSv4-8.2
+  - PCI-DSSv4-8.2.8
+  - low_complexity
+  - low_disruption
+  - medium_severity
+  - no_reboot_needed
+  - restrict_strategy
+  - sshd_set_keepalive
+
+- name: Set SSH Client Alive Count Max - Check if the parameter ClientAliveCountMax is configured correctly in /etc/ssh/sshd_config.d
+  ansible.builtin.find:
+    paths:
     - /etc/ssh/sshd_config.d
     contains: (?i)^\s*{{ "ClientAliveCountMax"| regex_escape }}\s+{{ var_sshd_set_keepalive }}$
-  register: _sshd_config_correctly
+  register: _config_dir_correctly
   when:
   - DISA_STIG_RHEL_09_255095 | bool
   - low_complexity | bool
@@ -13066,7 +13112,7 @@
       create: false
       regexp: (?i)(?i)^\s*{{ "ClientAliveCountMax"| regex_escape }}\s+
       state: absent
-    with_items: '{{ _etc_ssh_sshd_config_d_has_parameter.files }}'
+    with_items: '{{ _etc_ssh_sshd_config_d_has_parameter.files | default([]) }}'
     when: _etc_ssh_sshd_config_d_has_parameter.matched > 0
   - name: Insert correct line to /etc/ssh/sshd_config.d/00-complianceascode-hardening.conf
     ansible.builtin.lineinfile:
@@ -13086,7 +13132,8 @@
   - restrict_strategy | bool
   - sshd_set_keepalive | bool
   - '"kernel-core" in ansible_facts.packages'
-  - _sshd_config_correctly.matched == 0 or _sshd_config_has_parameter.matched != 1
+  - (_config_file_correctly.found == 0 and _config_dir_correctly.matched == 0) or ((_config_file_has_parameter.found | int)
+    + (_config_dir_has_parameter.matched | int)) != 1
   tags:
   - CCE-90805-3
   - CJIS-5.5.6
@@ -13143,13 +13190,14 @@
   - restrict_strategy
   - sshd_set_keepalive
 
-- name: Set SSH Client Alive Interval - Check if the parameter ClientAliveInterval is configured
-  ansible.builtin.find:
-    paths:
-    - /etc/ssh/sshd_config
-    - /etc/ssh/sshd_config.d
-    contains: (?i)^\s*{{ "ClientAliveInterval"| regex_escape }}\s+
-  register: _sshd_config_has_parameter
+- name: Set SSH Client Alive Interval - Check if the parameter ClientAliveInterval is configured in /etc/ssh/sshd_config
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: (?i)^\s*{{ "ClientAliveInterval"| regex_escape }}\s+
+    state: absent
+  check_mode: true
+  changed_when: false
+  register: _config_file_has_parameter
   when:
   - DISA_STIG_RHEL_09_255100 | bool
   - low_complexity | bool
@@ -13181,13 +13229,88 @@
   - restrict_strategy
   - sshd_set_idle_timeout
 
-- name: Set SSH Client Alive Interval - Check if the parameter ClientAliveInterval is configured correctly
+- name: Set SSH Client Alive Interval - Check if the parameter ClientAliveInterval is configured in /etc/ssh/sshd_config.d
   ansible.builtin.find:
     paths:
-    - /etc/ssh/sshd_config
+    - /etc/ssh/sshd_config.d
+    contains: (?i)^\s*{{ "ClientAliveInterval"| regex_escape }}\s+
+  register: _config_dir_has_parameter
+  when:
+  - DISA_STIG_RHEL_09_255100 | bool
+  - low_complexity | bool
+  - low_disruption | bool
+  - medium_severity | bool
+  - no_reboot_needed | bool
+  - restrict_strategy | bool
+  - sshd_set_idle_timeout | bool
+  - '"kernel-core" in ansible_facts.packages'
+  tags:
+  - CCE-90811-1
+  - CJIS-5.5.6
+  - DISA-STIG-RHEL-09-255100
+  - NIST-800-171-3.1.11
+  - NIST-800-53-AC-12
+  - NIST-800-53-AC-17(a)
+  - NIST-800-53-AC-17(a)
+  - NIST-800-53-AC-2(5)
+  - NIST-800-53-CM-6(a)
+  - NIST-800-53-CM-6(a)
+  - NIST-800-53-SC-10
+  - PCI-DSS-Req-8.1.8
+  - PCI-DSSv4-8.2
+  - PCI-DSSv4-8.2.8
+  - low_complexity
+  - low_disruption
+  - medium_severity
+  - no_reboot_needed
+  - restrict_strategy
+  - sshd_set_idle_timeout
+
+- name: Set SSH Client Alive Interval - Check if the parameter ClientAliveInterval is configured correctly in /etc/ssh/sshd_config
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: (?i)^\s*{{ "ClientAliveInterval"| regex_escape }}\s+{{ sshd_idle_timeout_value }}$
+    state: absent
+  check_mode: true
+  changed_when: false
+  register: _config_file_correctly
+  when:
+  - DISA_STIG_RHEL_09_255100 | bool
+  - low_complexity | bool
+  - low_disruption | bool
+  - medium_severity | bool
+  - no_reboot_needed | bool
+  - restrict_strategy | bool
+  - sshd_set_idle_timeout | bool
+  - '"kernel-core" in ansible_facts.packages'
+  tags:
+  - CCE-90811-1
+  - CJIS-5.5.6
+  - DISA-STIG-RHEL-09-255100
+  - NIST-800-171-3.1.11
+  - NIST-800-53-AC-12
+  - NIST-800-53-AC-17(a)
+  - NIST-800-53-AC-17(a)
+  - NIST-800-53-AC-2(5)
+  - NIST-800-53-CM-6(a)
+  - NIST-800-53-CM-6(a)
+  - NIST-800-53-SC-10
+  - PCI-DSS-Req-8.1.8
+  - PCI-DSSv4-8.2
+  - PCI-DSSv4-8.2.8
+  - low_complexity
+  - low_disruption
+  - medium_severity
+  - no_reboot_needed
+  - restrict_strategy
+  - sshd_set_idle_timeout
+
+- name: Set SSH Client Alive Interval - Check if the parameter ClientAliveInterval is configured correctly in /etc/ssh/sshd_config.d
+  ansible.builtin.find:
+    paths:
     - /etc/ssh/sshd_config.d
     contains: (?i)^\s*{{ "ClientAliveInterval"| regex_escape }}\s+{{ sshd_idle_timeout_value }}$
-  register: _sshd_config_correctly
+  register: _config_dir_correctly
   when:
   - DISA_STIG_RHEL_09_255100 | bool
   - low_complexity | bool
@@ -13245,7 +13368,7 @@
       create: false
       regexp: (?i)(?i)^\s*{{ "ClientAliveInterval"| regex_escape }}\s+
       state: absent
-    with_items: '{{ _etc_ssh_sshd_config_d_has_parameter.files }}'
+    with_items: '{{ _etc_ssh_sshd_config_d_has_parameter.files | default([]) }}'
     when: _etc_ssh_sshd_config_d_has_parameter.matched > 0
   - name: Insert correct line to /etc/ssh/sshd_config.d/00-complianceascode-hardening.conf
     ansible.builtin.lineinfile:
@@ -13265,7 +13388,8 @@
   - restrict_strategy | bool
   - sshd_set_idle_timeout | bool
   - '"kernel-core" in ansible_facts.packages'
-  - _sshd_config_correctly.matched == 0 or _sshd_config_has_parameter.matched != 1
+  - (_config_file_correctly.found == 0 and _config_dir_correctly.matched == 0) or ((_config_file_has_parameter.found | int)
+    + (_config_dir_has_parameter.matched | int)) != 1
   tags:
   - CCE-90811-1
   - CJIS-5.5.6
@@ -13326,13 +13450,14 @@
   - restrict_strategy
   - sshd_set_idle_timeout
 
-- name: Enable SSH Warning Banner - Check if the parameter Banner is configured
-  ansible.builtin.find:
-    paths:
-    - /etc/ssh/sshd_config
-    - /etc/ssh/sshd_config.d
-    contains: (?i)^\s*{{ "Banner"| regex_escape }}\s+
-  register: _sshd_config_has_parameter
+- name: Enable SSH Warning Banner - Check if the parameter Banner is configured in /etc/ssh/sshd_config
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: (?i)^\s*{{ "Banner"| regex_escape }}\s+
+    state: absent
+  check_mode: true
+  changed_when: false
+  register: _config_file_has_parameter
   when:
   - low_complexity | bool
   - low_disruption | bool
@@ -13356,13 +13481,72 @@
   - restrict_strategy
   - sshd_enable_warning_banner_net
 
-- name: Enable SSH Warning Banner - Check if the parameter Banner is configured correctly
+- name: Enable SSH Warning Banner - Check if the parameter Banner is configured in /etc/ssh/sshd_config.d
   ansible.builtin.find:
     paths:
-    - /etc/ssh/sshd_config
+    - /etc/ssh/sshd_config.d
+    contains: (?i)^\s*{{ "Banner"| regex_escape }}\s+
+  register: _config_dir_has_parameter
+  when:
+  - low_complexity | bool
+  - low_disruption | bool
+  - medium_severity | bool
+  - no_reboot_needed | bool
+  - restrict_strategy | bool
+  - sshd_enable_warning_banner_net | bool
+  - '"kernel-core" in ansible_facts.packages'
+  tags:
+  - CCE-87979-1
+  - CJIS-5.5.6
+  - NIST-800-171-3.1.9
+  - NIST-800-53-AC-17(a)
+  - NIST-800-53-AC-8(a)
+  - NIST-800-53-AC-8(c)
+  - NIST-800-53-CM-6(a)
+  - low_complexity
+  - low_disruption
+  - medium_severity
+  - no_reboot_needed
+  - restrict_strategy
+  - sshd_enable_warning_banner_net
+
+- name: Enable SSH Warning Banner - Check if the parameter Banner is configured correctly in /etc/ssh/sshd_config
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: (?i)^\s*{{ "Banner"| regex_escape }}\s+/etc/issue.net$
+    state: absent
+  check_mode: true
+  changed_when: false
+  register: _config_file_correctly
+  when:
+  - low_complexity | bool
+  - low_disruption | bool
+  - medium_severity | bool
+  - no_reboot_needed | bool
+  - restrict_strategy | bool
+  - sshd_enable_warning_banner_net | bool
+  - '"kernel-core" in ansible_facts.packages'
+  tags:
+  - CCE-87979-1
+  - CJIS-5.5.6
+  - NIST-800-171-3.1.9
+  - NIST-800-53-AC-17(a)
+  - NIST-800-53-AC-8(a)
+  - NIST-800-53-AC-8(c)
+  - NIST-800-53-CM-6(a)
+  - low_complexity
+  - low_disruption
+  - medium_severity
+  - no_reboot_needed
+  - restrict_strategy
+  - sshd_enable_warning_banner_net
+
+- name: Enable SSH Warning Banner - Check if the parameter Banner is configured correctly in /etc/ssh/sshd_config.d
+  ansible.builtin.find:
+    paths:
     - /etc/ssh/sshd_config.d
     contains: (?i)^\s*{{ "Banner"| regex_escape }}\s+/etc/issue.net$
-  register: _sshd_config_correctly
+  register: _config_dir_correctly
   when:
   - low_complexity | bool
   - low_disruption | bool
@@ -13412,7 +13596,7 @@
       create: false
       regexp: (?i)(?i)^\s*{{ "Banner"| regex_escape }}\s+
       state: absent
-    with_items: '{{ _etc_ssh_sshd_config_d_has_parameter.files }}'
+    with_items: '{{ _etc_ssh_sshd_config_d_has_parameter.files | default([]) }}'
     when: _etc_ssh_sshd_config_d_has_parameter.matched > 0
   - name: Insert correct line to /etc/ssh/sshd_config.d/00-complianceascode-hardening.conf
     ansible.builtin.lineinfile:
@@ -13431,7 +13615,8 @@
   - restrict_strategy | bool
   - sshd_enable_warning_banner_net | bool
   - '"kernel-core" in ansible_facts.packages'
-  - _sshd_config_correctly.matched == 0 or _sshd_config_has_parameter.matched != 1
+  - (_config_file_correctly.found == 0 and _config_dir_correctly.matched == 0) or ((_config_file_has_parameter.found | int)
+    + (_config_dir_has_parameter.matched | int)) != 1
   tags:
   - CCE-87979-1
   - CJIS-5.5.6
