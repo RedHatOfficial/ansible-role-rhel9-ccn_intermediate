@@ -5,9 +5,10 @@ inactivity_timeout_value: '300'
 var_screensaver_lock_delay: '0'
 var_sudo_timestamp_timeout: '5'
 var_authselect_profile: sssd
-login_banner_text: ^(Authorized[\s\n]+users[\s\n]+only\.[\s\n]+All[\s\n]+activity[\s\n]+may[\s\n]+be[\s\n]+monitored[\s\n]+and[\s\n]+reported\.|^(?!.*(\\|fedora|rhel|sle|ubuntu)).*)$
-remote_login_banner_text: ^(Authorized[\s\n]+uses[\s\n]+only\.[\s\n]+All[\s\n]+activity[\s\n]+may[\s\n]+be[\s\n]+monitored[\s\n]+and[\s\n]+reported\.|^(?!.*(\\|fedora|rhel|sle|ubuntu)).*)$
-motd_banner_text: ^Authorized[\s\n]+uses[\s\n]+only\.[\s\n]+All[\s\n]+activity[\s\n]+may[\s\n]+be[\s\n]+monitored[\s\n]+and[\s\n]+reported\.$
+login_banner_contents: Authorized users only. All activity may be monitored and reported.
+remote_login_banner_contents: Authorized users only. All activity may be monitored and reported.
+motd_banner_contents: Authorized users only. All activity may be monitored and reported.
+dconf_login_banner_contents: Authorized uses only. All activity may be monitored and reported.
 var_password_pam_remember: '20'
 var_password_pam_remember_control_flag: requisite
 var_password_pam_dcredit: '-1'
@@ -52,6 +53,7 @@ DISA_STIG_RHEL_09_171011: true
 DISA_STIG_RHEL_09_211020: true
 DISA_STIG_RHEL_09_212025: true
 DISA_STIG_RHEL_09_212030: true
+DISA_STIG_RHEL_09_213115: true
 DISA_STIG_RHEL_09_215015: true
 DISA_STIG_RHEL_09_215040: true
 DISA_STIG_RHEL_09_215060: true
@@ -106,7 +108,6 @@ DISA_STIG_RHEL_09_411035: true
 DISA_STIG_RHEL_09_431010: true
 DISA_STIG_RHEL_09_431015: true
 DISA_STIG_RHEL_09_432015: true
-DISA_STIG_RHEL_09_432035: true
 DISA_STIG_RHEL_09_611065: true
 DISA_STIG_RHEL_09_611070: true
 DISA_STIG_RHEL_09_611075: true
@@ -240,6 +241,7 @@ restrict_strategy: true
 selinux_policytype: true
 selinux_state: true
 service_firewalld_enabled: true
+service_kdump_disabled: true
 service_nftables_disabled: true
 service_usbguard_enabled: true
 set_password_hashing_algorithm_logindefs: true
@@ -278,4 +280,3 @@ sysctl_net_ipv6_conf_default_accept_source_route: true
 unknown_severity: true
 unknown_strategy: true
 usbguard_generate_policy: true
-use_pam_wheel_for_su: true
